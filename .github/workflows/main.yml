@@ -29,26 +29,32 @@ on:
           - "n"
 
 jobs:
-  build:
-    name: Build for ${{ matrix.model }}
+  # This job figures out exactly which devices to build
+  prepare:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false # Don't stop other builds if one fails
-      matrix:
-        # This list includes all devices supported by your script
-        model: [beyond0lte, beyond1lte, beyond2lte, beyondx, d1, d1xks, d2s, d2x, d2xks]
-        # Logic to filter the matrix based on user input
-        exclude:
-          - model: ${{ github.event.inputs.model != 'all' ? (github.event.inputs.model != 'beyond0lte' ? 'beyond0lte' : '') : '' }}
-          - model: ${{ github.event.inputs.model != 'all' ? (github.event.inputs.model != 'beyond1lte' ? 'beyond1lte' : '') : '' }}
-          - model: ${{ github.event.inputs.model != 'all' ? (github.event.inputs.model != 'beyond2lte' ? 'beyond2lte' : '') : '' }}
-          - model: ${{ github.event.inputs.model != 'all' ? (github.event.inputs.model != 'beyondx' ? 'beyondx' : '') : '' }}
-          - model: ${{ github.event.inputs.model != 'all' ? (github.event.inputs.model != 'd1' ? 'd1' : '') : '' }}
-          - model: ${{ github.event.inputs.model != 'all' ? (github.event.inputs.model != 'd1xks' ? 'd1xks' : '') : '' }}
-          - model: ${{ github.event.inputs.model != 'all' ? (github.event.inputs.model != 'd2s' ? 'd2s' : '') : '' }}
-          - model: ${{ github.event.inputs.model != 'all' ? (github.event.inputs.model != 'd2x' ? 'd2x' : '') : '' }}
-          - model: ${{ github.event.inputs.model != 'all' ? (github.event.inputs.model != 'd2xks' ? 'd2xks' : '') : '' }}
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - id: set-matrix
+        run: |
+          if [[ "${{ github.event.inputs.model }}" == "all" ]]; then
+            # Full list of devices
+            JSON='["beyond0lte", "beyond1lte", "beyond2lte", "beyondx", "d1", "d1xks", "d2s", "d2x", "d2xks"]'
+          else
+            # Just the one device selected
+            JSON='["${{ github.event.inputs.model }}"]'
+          fi
+          echo "matrix={\"model\":$JSON}" >> $GITHUB_OUTPUT
 
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest  # <-- The important line you mentioned!
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    
+    name: Build ${{ matrix.model }}
+    
     steps:
       - name: Checkout Source
         uses: actions/checkout@v4
@@ -56,7 +62,7 @@ jobs:
           submodules: 'recursive'
           fetch-depth: 1
 
-      - name: Install Dependencies
+      - name: Install Build Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y bc build-essential flex bison libssl-dev libelf-dev \
@@ -64,17 +70,17 @@ jobs:
 
       - name: Update Submodules
         run: |
-          git submodule update --init --recursive
-          git submodule update --remote
+          git submodule sync --recursive
+          git submodule update --init --force --recursive --remote
 
-      - name: Build Kernel
+      - name: Execute Build Script
         run: |
           chmod +x ./build.sh
-          # Calling your script with the matrix variables
+          # Passing the model from the matrix and the KSU choice from input
           ./build.sh --model ${{ matrix.model }} --ksu ${{ github.event.inputs.ksu }}
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ExtremeKRNL-${{ matrix.model }}-${{ github.run_id }}
+          name: ExtremeKRNL-Nexus-${{ matrix.model }}
           path: build/out/${{ matrix.model }}/*.zip
