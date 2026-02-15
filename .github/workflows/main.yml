@@ -1,58 +1,80 @@
-name: Build Samsung Exynos Kernel
+name: ExtremeKRNL Nexus Build
 
 on:
   workflow_dispatch:
     inputs:
       model:
-        description: 'Phone Model (e.g., beyond0lte, d1, d2x)'
+        description: "Select Model (or 'all' for full distribution)"
         required: true
+        default: "all"
         type: choice
         options:
+          - all
           - beyond0lte
           - beyond1lte
           - beyond2lte
+          - beyondx
           - d1
-          - d2x
+          - d1xks
           - d2s
+          - d2x
+          - d2xks
       ksu:
-        description: 'Include KernelSU?'
+        description: "Include KernelSU?"
         required: true
-        type: boolean
-        default: false
+        default: "y"
+        type: choice
+        options:
+          - "y"
+          - "n"
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    name: Build for ${{ matrix.model }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # Don't stop other builds if one fails
+      matrix:
+        # This list includes all devices supported by your script
+        model: [beyond0lte, beyond1lte, beyond2lte, beyondx, d1, d1xks, d2s, d2x, d2xks]
+        # Logic to filter the matrix based on user input
+        exclude:
+          - model: ${{ github.event.inputs.model != 'all' ? (github.event.inputs.model != 'beyond0lte' ? 'beyond0lte' : '') : '' }}
+          - model: ${{ github.event.inputs.model != 'all' ? (github.event.inputs.model != 'beyond1lte' ? 'beyond1lte' : '') : '' }}
+          - model: ${{ github.event.inputs.model != 'all' ? (github.event.inputs.model != 'beyond2lte' ? 'beyond2lte' : '') : '' }}
+          - model: ${{ github.event.inputs.model != 'all' ? (github.event.inputs.model != 'beyondx' ? 'beyondx' : '') : '' }}
+          - model: ${{ github.event.inputs.model != 'all' ? (github.event.inputs.model != 'd1' ? 'd1' : '') : '' }}
+          - model: ${{ github.event.inputs.model != 'all' ? (github.event.inputs.model != 'd1xks' ? 'd1xks' : '') : '' }}
+          - model: ${{ github.event.inputs.model != 'all' ? (github.event.inputs.model != 'd2s' ? 'd2s' : '') : '' }}
+          - model: ${{ github.event.inputs.model != 'all' ? (github.event.inputs.model != 'd2x' ? 'd2x' : '') : '' }}
+          - model: ${{ github.event.inputs.model != 'all' ? (github.event.inputs.model != 'd2xks' ? 'd2xks' : '') : '' }}
+
     steps:
-      - name: Checkout Kernel Source
+      - name: Checkout Source
         uses: actions/checkout@v4
         with:
           submodules: 'recursive'
+          fetch-depth: 1
 
-      - name: Install Build Dependencies
+      - name: Install Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y bc build-essential flex bison libssl-dev libelf-dev \
-          python3-pip cpio zip git
+          python3 cpio zip git clang llvm lld
 
-      - name: Set up Toolchain
+      - name: Update Submodules
         run: |
-          # Note: Ensure your repo has the toolchain at the path the script expects
-          # or download it here if it's not in the repo.
-          chmod +x toolchain/mkdtimg
-          chmod +x toolchain/mkbootimg
+          git submodule update --init --recursive
+          git submodule update --remote
 
-      - name: Run Build Script
+      - name: Build Kernel
         run: |
-          # Format KSU option to match script expectation (y/N)
-          KSU_VAL=${{ github.event.inputs.ksu == 'true' && 'y' || 'N' }}
-          
-          chmod +x build.sh
-          ./build.sh --model ${{ github.event.inputs.model }} --ksu $KSU_VAL
+          chmod +x ./build.sh
+          # Calling your script with the matrix variables
+          ./build.sh --model ${{ matrix.model }} --ksu ${{ github.event.inputs.ksu }}
 
-      - name: Upload Kernel Zip
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Kernel-${{ github.event.inputs.model }}-${{ github.run_id }}
-          path: build/out/${{ github.event.inputs.model }}/*.zip
-
+          name: ExtremeKRNL-${{ matrix.model }}-${{ github.run_id }}
+          path: build/out/${{ matrix.model }}/*.zip
