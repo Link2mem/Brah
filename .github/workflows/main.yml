@@ -1,0 +1,58 @@
+name: Build Samsung Exynos Kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: 'Phone Model (e.g., beyond0lte, d1, d2x)'
+        required: true
+        type: choice
+        options:
+          - beyond0lte
+          - beyond1lte
+          - beyond2lte
+          - d1
+          - d2x
+          - d2s
+      ksu:
+        description: 'Include KernelSU?'
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout Kernel Source
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc build-essential flex bison libssl-dev libelf-dev \
+          python3-pip cpio zip git
+
+      - name: Set up Toolchain
+        run: |
+          # Note: Ensure your repo has the toolchain at the path the script expects
+          # or download it here if it's not in the repo.
+          chmod +x toolchain/mkdtimg
+          chmod +x toolchain/mkbootimg
+
+      - name: Run Build Script
+        run: |
+          # Format KSU option to match script expectation (y/N)
+          KSU_VAL=${{ github.event.inputs.ksu == 'true' && 'y' || 'N' }}
+          
+          chmod +x build.sh
+          ./build.sh --model ${{ github.event.inputs.model }} --ksu $KSU_VAL
+
+      - name: Upload Kernel Zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kernel-${{ github.event.inputs.model }}-${{ github.run_id }}
+          path: build/out/${{ github.event.inputs.model }}/*.zip
+
